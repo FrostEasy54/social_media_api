@@ -40,6 +40,11 @@ class PostResponse(PostBase):
     owner: UserResponse
 
 
+class PostVoteResponse(BaseModel):
+    post: PostResponse
+    votes: int
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -47,3 +52,8 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     id: Optional[str] = None
+
+
+class Vote(BaseModel):
+    post_id: int
+    dir: bool

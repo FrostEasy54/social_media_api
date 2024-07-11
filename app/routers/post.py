@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, oauth2, schemas
@@ -9,7 +10,7 @@ from ..database import get_db
 router = APIRouter(prefix="/posts", tags=["Posts"])
 
 
-@router.get("/", response_model=List[schemas.PostResponse])
+@router.get("/", response_model=List[schemas.PostVoteResponse])
 def get_posts(
     db: Session = Depends(get_db),
     current_user: int = Depends(oauth2.get_current_user),
@@ -17,14 +18,21 @@ def get_posts(
     skip: int = 0,
     search: Optional[str] = "",
 ):
-    posts = (
-        db.query(models.Post)
+    results = (
+        db.query(models.Post, func.count(models.Vote.post_id).label("votes"))
+        .join(models.Vote, models.Vote.post_id == models.Post.id, isouter=True)
+        .group_by(models.Post.id)
         .filter(models.Post.title.contains(search))
         .limit(limit)
         .offset(skip)
         .all()
     )
-    return posts
+    response_data = [
+        schemas.PostVoteResponse(post=post, votes=votes)
+        for post, votes in results
+    ]
+
+    return response_data
 
 
 @router.post(
@@ -44,20 +52,27 @@ def create_posts(
     return new_post
 
 
-@router.get("/{id}", response_model=schemas.PostResponse)
+@router.get("/{id}", response_model=schemas.PostVoteResponse)
 def get_post(
     id: int,
     db: Session = Depends(get_db),
     current_user: int = Depends(oauth2.get_current_user),
 ):
-    post = db.query(models.Post).filter(models.Post.id == id).first()
+    post = (
+        db.query(models.Post, func.count(models.Vote.post_id).label("votes"))
+        .join(models.Vote, models.Vote.post_id == models.Post.id, isouter=True)
+        .group_by(models.Post.id)
+        .filter(models.Post.id == id)
+        .first()
+    )
 
     if not post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"id {id} not found"
         )
-
-    return post
+    post_data, votes = post
+    response_data = schemas.PostVoteResponse(post=post_data, votes=votes)
+    return response_data
 
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
